@@ -1,39 +1,31 @@
+from urllib.parse import urlparse
+
 from seleniumbase import SB
 
 
 class ResumeSender:
     def __init__(self, links):
-        self.links = links
+        self.links: [str] = links
 
-    def process_links(self):
+    def process_links(self, override_employer=None):
         with SB(test=True) as sb:
             for link in self.links:
                 try:
                     sb.open(link)
-                    iframe = sb.find_element("iframe.lc-iframe__iframe")
-                    sb.driver.switch_to.frame(iframe)
 
-                    sb.driver.execute_script("window.scrollBy(0, 2000);")
-                    sb.wait(2)
+                    if override_employer:
+                        employer = override_employer
+                    else:
+                        hostname = urlparse(link).hostname
+                        if not hostname:
+                            raise ValueError(f"Невозможно извлечь хост из ссылки: {link}")
+                        employer = hostname.split('.')[0]
 
-                    sb.click('div p:contains("Файл с резюме")')
-
-                    # Заполняем форму
-                    sb.choose_file("input[type='file']", cv_pdf_path)
-                    sb.type("#answer_param_name", name)
-                    sb.type("#answer_param_surname", surname)
-                    sb.type("#answer_param_phone", phone)
-                    sb.type("#answer_non_profile_email_5257", email)
-                    sb.type("#answer_long_text_5258", additional_message)
-
-                    # Выбираем пункт согласия
-                    sb.click("p:contains('Рассмотрения моей')")
-
-                    # Отправляем форму
-                    sb.click("button[type='submit']")
-
-                    # Ждем подтверждения отправки
-                    sb.assert_text("Заявка отправлена! Спасибо", timeout=5)
+                    try:
+                        module = __import__(f"employers.{employer}", fromlist=[f"process_application"])
+                        module.process_application(sb)
+                    except (ImportError, AttributeError):
+                        raise NotImplementedError(f"Нет обработчика для работодателя: {employer}")
 
                 except Exception as e:
                     print(f"Ошибка при обработке ссылки {link}: {e}")
@@ -41,18 +33,9 @@ class ResumeSender:
 
 
 if __name__ == "__main__":
-    file_path = "links.txt"
+    file_path = "links_apply_to.txt"
 
     with open(file_path, 'r', encoding='utf-8') as file:
         links = [line.strip() for line in file if line.strip()]
-
-    name = "Иван"
-    surname = "Иванов"
-    phone = "+79998887766"
-    cv_pdf_path = "CV.pdf"
-    email = "email@yandex.ru"
-    additional_message = '''
-    Доброго дня! Хочу у вас работать!
-    '''
 
     ResumeSender(links).process_links()
